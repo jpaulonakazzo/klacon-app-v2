@@ -1,0 +1,10 @@
+{
+  "name": "Klacon Fieldtrack",
+  "description": "Aplicativo de gestão de obras e vistoria de apartamentos para a Klacon.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
