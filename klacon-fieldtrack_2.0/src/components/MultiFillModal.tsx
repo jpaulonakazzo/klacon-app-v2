@@ -24,6 +24,19 @@ import {
 } from '../types';
 import { cn } from '../lib/utils';
 
+const getCategoryDisplayName = (category: ServiceCategory) => {
+  if (category.name.startsWith('🪨') || category.name.startsWith('🧱') || category.name.startsWith('📁')) {
+    return category.name;
+  }
+  if (category.id === 'granitos' || category.name.toLowerCase().includes('granito')) {
+    return `🪨 ${category.name}`;
+  }
+  if (category.id === 'revestimento_ceramico' || category.name.toLowerCase().includes('revestimento')) {
+    return `🧱 ${category.name}`;
+  }
+  return `📁 ${category.name}`;
+};
+
 interface MultiFillModalProps {
   state: AppState;
   onClose: () => void;
@@ -70,7 +83,7 @@ export function MultiFillModal({
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
 
-  // Group services dynamically
+  // Group services dynamically with reliable categories
   const groupedStructure = useMemo(() => {
     return groupServices(state.servicesList, state.categories);
   }, [state.servicesList, state.categories]);
@@ -83,6 +96,25 @@ export function MultiFillModal({
         next.delete(serviceName);
       } else {
         next.add(serviceName);
+      }
+      return next;
+    });
+  };
+
+  // Toggle all subservices of a category
+  const toggleCategorySelection = (category: ServiceCategory) => {
+    const subs = category.subServices;
+    if (subs.length === 0) {
+      toggleService(category.name);
+      return;
+    }
+    const allSelected = subs.every(s => selectedServices.has(s));
+    setSelectedServices(prev => {
+      const next = new Set(prev);
+      if (allSelected) {
+        subs.forEach(s => next.delete(s));
+      } else {
+        subs.forEach(s => next.add(s));
       }
       return next;
     });
@@ -105,7 +137,7 @@ export function MultiFillModal({
   const toggleCategoryExpand = (catId: string) => {
     setExpandedCategories(prev => ({
       ...prev,
-      [catId]: prev[catId] === undefined ? true : !prev[catId]
+      [catId]: !(prev[catId] ?? true)
     }));
   };
 
@@ -405,14 +437,14 @@ export function MultiFillModal({
                           : "bg-white dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600"
                       )}
                     >
-                      <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
                         <input 
                           type="checkbox"
                           checked={isChecked}
                           onChange={() => toggleService(serviceName)}
-                          className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500 border-neutral-300 dark:border-neutral-700 cursor-pointer"
+                          className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500 border-neutral-300 dark:border-neutral-700 cursor-pointer shrink-0"
                         />
-                        <span className="text-xs font-semibold text-neutral-900 dark:text-neutral-100 truncate">
+                        <span className="text-xs font-semibold text-neutral-900 dark:text-neutral-100 whitespace-normal break-words leading-snug">
                           {serviceName}
                         </span>
                       </div>
@@ -436,6 +468,8 @@ export function MultiFillModal({
 
                 // Count how many subitems in this category are selected
                 const selectedInCat = subServices.filter(s => selectedServices.has(s)).length;
+                const allCatSelected = subServices.length > 0 && selectedInCat === subServices.length;
+                const isPartiallySelected = selectedInCat > 0 && selectedInCat < subServices.length;
 
                 return (
                   <div 
@@ -444,26 +478,54 @@ export function MultiFillModal({
                   >
                     {/* Category Header Accordion */}
                     <div 
-                      onClick={() => toggleCategoryExpand(category.id)}
-                      className="p-3 bg-neutral-50/80 dark:bg-neutral-800/50 flex items-center justify-between cursor-pointer select-none border-b border-neutral-200/60 dark:border-neutral-800"
+                      className={cn(
+                        "p-3 bg-neutral-50/90 dark:bg-neutral-800/60 flex items-center justify-between border-b border-neutral-200/60 dark:border-neutral-800 gap-2 transition-colors",
+                        selectedInCat > 0 && "bg-teal-50/50 dark:bg-teal-950/20"
+                      )}
                     >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <Layers className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
-                        <span className="text-xs font-bold text-neutral-900 dark:text-neutral-100 truncate">
-                          {category.name}
-                        </span>
-                        <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded-full bg-neutral-200/80 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300">
-                          {subServices.length} subitens
-                        </span>
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        {/* Checkbox to mark all subitems of this category */}
+                        <input 
+                          type="checkbox"
+                          checked={allCatSelected || (subServices.length === 0 && selectedServices.has(category.name))}
+                          ref={el => {
+                            if (el) {
+                              el.indeterminate = isPartiallySelected;
+                            }
+                          }}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            toggleCategorySelection(category);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500 border-neutral-300 dark:border-neutral-600 cursor-pointer shrink-0"
+                          title={allCatSelected ? "Desmarcar todos os subitens desta categoria" : "Marcar todos os subitens desta categoria"}
+                        />
+
+                        <div 
+                          onClick={() => toggleCategoryExpand(category.id)}
+                          className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer select-none"
+                        >
+                          <Layers className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
+                          <span className="text-xs font-bold text-neutral-900 dark:text-neutral-100 whitespace-normal break-words leading-snug">
+                            {getCategoryDisplayName(category)}
+                          </span>
+                          <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded-full bg-neutral-200/80 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 shrink-0">
+                            {subServices.length} {subServices.length === 1 ? 'subitem' : 'subitens'}
+                          </span>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div 
+                        onClick={() => toggleCategoryExpand(category.id)}
+                        className="flex items-center gap-1.5 shrink-0 cursor-pointer select-none"
+                      >
                         {selectedInCat > 0 && (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-100 dark:bg-teal-950/80 text-teal-800 dark:text-teal-300 border border-teal-200 dark:border-teal-800">
-                            {selectedInCat} marcados
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-100 dark:bg-teal-950/80 text-teal-800 dark:text-teal-300 border border-teal-200 dark:border-teal-800 whitespace-nowrap">
+                            {selectedInCat} de {subServices.length} marcados
                           </span>
                         )}
-                        <span className="text-neutral-400">
+                        <span className="text-neutral-400 p-0.5 hover:text-neutral-700 dark:hover:text-neutral-200">
                           {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                         </span>
                       </div>
@@ -472,31 +534,35 @@ export function MultiFillModal({
                     {/* Subitems with Individual Checkboxes */}
                     {isExpanded && (
                       <div className="p-2.5 flex flex-col gap-1.5 bg-neutral-50/30 dark:bg-neutral-900/30">
-                        {filteredSubs.map(subName => {
-                          const isSubChecked = selectedServices.has(subName);
+                        {filteredSubs.length === 0 ? (
+                          <p className="text-xs text-neutral-400 italic p-1">Nenhum subitem disponível.</p>
+                        ) : (
+                          filteredSubs.map(subName => {
+                            const isSubChecked = selectedServices.has(subName);
 
-                          return (
-                            <label 
-                              key={subName}
-                              className={cn(
-                                "p-2 rounded-lg border flex items-center justify-between gap-2.5 cursor-pointer select-none transition-colors",
-                                isSubChecked
-                                  ? "bg-teal-50/70 dark:bg-teal-950/40 border-teal-300 dark:border-teal-800 text-teal-900 dark:text-teal-200 font-semibold"
-                                  : "bg-white dark:bg-neutral-800/80 border-neutral-200/70 dark:border-neutral-700/60 hover:border-neutral-300 text-neutral-800 dark:text-neutral-200 text-xs"
-                              )}
-                            >
-                              <div className="flex items-center gap-2.5 min-w-0">
-                                <input 
-                                  type="checkbox"
-                                  checked={isSubChecked}
-                                  onChange={() => toggleService(subName)}
-                                  className="w-3.5 h-3.5 rounded text-teal-600 focus:ring-teal-500 border-neutral-300 dark:border-neutral-700 cursor-pointer"
-                                />
-                                <span className="text-xs truncate">{subName}</span>
-                              </div>
-                            </label>
-                          );
-                        })}
+                            return (
+                              <label 
+                                key={subName}
+                                className={cn(
+                                  "p-2.5 rounded-lg border flex items-center justify-between gap-2.5 cursor-pointer select-none transition-colors",
+                                  isSubChecked
+                                    ? "bg-teal-50/70 dark:bg-teal-950/40 border-teal-300 dark:border-teal-800 text-teal-900 dark:text-teal-200 font-semibold"
+                                    : "bg-white dark:bg-neutral-800/80 border-neutral-200/70 dark:border-neutral-700/60 hover:border-neutral-300 text-neutral-800 dark:text-neutral-200 text-xs"
+                                )}
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                  <input 
+                                    type="checkbox"
+                                    checked={isSubChecked}
+                                    onChange={() => toggleService(subName)}
+                                    className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500 border-neutral-300 dark:border-neutral-700 cursor-pointer shrink-0"
+                                  />
+                                  <span className="text-xs whitespace-normal break-words leading-snug flex-1 min-w-0">{subName}</span>
+                                </div>
+                              </label>
+                            );
+                          })
+                        )}
                       </div>
                     )}
                   </div>

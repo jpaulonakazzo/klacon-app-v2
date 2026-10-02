@@ -93,7 +93,7 @@ export const DEFAULT_CATEGORIES: ServiceCategory[] = [
 
 export const SERVICE_CATEGORIES: ServiceCategory[] = DEFAULT_CATEGORIES;
 
-export function getServiceCategory(serviceName: string, categories: ServiceCategory[] = DEFAULT_CATEGORIES): ServiceCategory | undefined {
+export function getServiceCategory(serviceName: string, categories: ServiceCategory[] = []): ServiceCategory | undefined {
   return categories.find(cat => cat.subServices.includes(serviceName));
 }
 
@@ -105,29 +105,34 @@ export type GroupedServiceItem =
   | { type: 'standalone'; name: string }
   | { type: 'category'; category: ServiceCategory; services: string[] };
 
-export function groupServices(servicesList: string[], categories: ServiceCategory[] = DEFAULT_CATEGORIES): GroupedServiceItem[] {
+export function groupServices(servicesList: string[], categories: ServiceCategory[] = []): GroupedServiceItem[] {
+  const effectiveCategories = (categories && categories.length > 0) ? categories : DEFAULT_CATEGORIES;
   const result: GroupedServiceItem[] = [];
   const processedSubServices = new Set<string>();
   const processedCategoryIds = new Set<string>();
 
-  // Map subservice name -> category
+  const normalizeKey = (s: string) => s.trim().toLowerCase();
+
+  // Map subservice name (normalized) -> category
   const subServiceToCat = new Map<string, ServiceCategory>();
-  categories.forEach(cat => {
+  effectiveCategories.forEach(cat => {
     cat.subServices.forEach(sub => {
-      subServiceToCat.set(sub, cat);
+      subServiceToCat.set(normalizeKey(sub), cat);
     });
   });
 
   servicesList.forEach(serviceName => {
+    const norm = normalizeKey(serviceName);
+
     // If it's a category name directly in servicesList (e.g. legacy 'Granitos' or 'Revestimento Cerâmico')
-    const matchedCategoryByName = categories.find(c => 
-      c.name.toLowerCase() === serviceName.toLowerCase() || 
+    const matchedCategoryByName = effectiveCategories.find(c => 
+      normalizeKey(c.name) === norm || 
       c.id === serviceName || 
-      (c.id === 'granitos' && (serviceName === 'Granitos' || serviceName === '🪨 Granitos')) ||
+      (c.id === 'granitos' && (norm === 'granitos' || norm === '🪨 granitos')) ||
       (c.id === 'revestimento_ceramico' && (
-        serviceName.toLowerCase() === 'revestimento cerâmico' || 
-        serviceName.toLowerCase() === 'revestimento ceramico' ||
-        serviceName.toLowerCase() === '🧱 revestimento cerâmico'
+        norm === 'revestimento cerâmico' || 
+        norm === 'revestimento ceramico' ||
+        norm === '🧱 revestimento cerâmico'
       ))
     );
     
@@ -139,30 +144,21 @@ export function groupServices(servicesList: string[], categories: ServiceCategor
           services: [...matchedCategoryByName.subServices]
         });
         processedCategoryIds.add(matchedCategoryByName.id);
-        matchedCategoryByName.subServices.forEach(s => processedSubServices.add(s));
+        matchedCategoryByName.subServices.forEach(s => processedSubServices.add(normalizeKey(s)));
       }
       return;
     }
 
-    const cat = subServiceToCat.get(serviceName);
+    const cat = subServiceToCat.get(norm);
     if (cat) {
-      if (!processedSubServices.has(serviceName)) {
-        let catGroup = result.find(r => r.type === 'category' && r.category.id === cat.id) as 
-          | { type: 'category'; category: ServiceCategory; services: string[] } 
-          | undefined;
-        if (!catGroup) {
-          catGroup = {
-            type: 'category',
-            category: cat,
-            services: []
-          };
-          result.push(catGroup);
-          processedCategoryIds.add(cat.id);
-        }
-        if (!catGroup.services.includes(serviceName)) {
-          catGroup.services.push(serviceName);
-        }
-        processedSubServices.add(serviceName);
+      if (!processedCategoryIds.has(cat.id)) {
+        result.push({
+          type: 'category',
+          category: cat,
+          services: [...cat.subServices]
+        });
+        processedCategoryIds.add(cat.id);
+        cat.subServices.forEach(s => processedSubServices.add(normalizeKey(s)));
       }
     } else {
       result.push({
@@ -173,7 +169,7 @@ export function groupServices(servicesList: string[], categories: ServiceCategor
   });
 
   // Ensure all configured categories exist in the list (including newly created ones with 0 or more subservices)
-  categories.forEach(cat => {
+  effectiveCategories.forEach(cat => {
     if (!processedCategoryIds.has(cat.id)) {
       result.push({
         type: 'category',
@@ -181,7 +177,14 @@ export function groupServices(servicesList: string[], categories: ServiceCategor
         services: [...cat.subServices]
       });
       processedCategoryIds.add(cat.id);
-      cat.subServices.forEach(s => processedSubServices.add(s));
+      cat.subServices.forEach(s => processedSubServices.add(normalizeKey(s)));
+    }
+  });
+
+  // Strict check: make sure every category item in result reflects its active category.subServices
+  result.forEach(item => {
+    if (item.type === 'category') {
+      item.services = [...item.category.subServices];
     }
   });
 

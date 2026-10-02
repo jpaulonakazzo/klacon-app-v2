@@ -18,12 +18,14 @@ import { BulkAssignModal } from './components/BulkAssignModal';
 import { SettingsServicesModal } from './components/SettingsServicesModal';
 import { MultiFillModal } from './components/MultiFillModal';
 import { cn } from './lib/utils';
+import { FLOORS } from './types';
 
 type Screen = 'home' | 'dashboard' | 'search' | 'notifications' | 'floorplan' | 'apartment';
 
 export default function App() {
   const { 
     state, 
+    isLoaded,
     updateService, 
     markNotificationRead, 
     markAllNotificationsRead,
@@ -47,7 +49,23 @@ export default function App() {
     addContractor 
   } = useAppStore();
   const [currentScreen, setCurrentScreen] = useState<Screen>('home');
+  const [previousScreen, setPreviousScreen] = useState<Screen>('home');
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
+  const [selectedFloor, setSelectedFloor] = useState<string>(() => {
+    try {
+      return localStorage.getItem('klacon_selected_floor') || FLOORS[1].id;
+    } catch {
+      return FLOORS[1].id;
+    }
+  });
+
+  const handleSelectFloor = (floorId: string) => {
+    setSelectedFloor(floorId);
+    try {
+      localStorage.setItem('klacon_selected_floor', floorId);
+    } catch {}
+  };
+
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [showAddServiceModal, setShowAddServiceModal] = useState(false);
   const [showBulkAssignModal, setShowBulkAssignModal] = useState(false);
@@ -98,11 +116,41 @@ export default function App() {
   }, []);
 
   const navigateToApartment = (locationId: string) => {
+    const foundFloor = FLOORS.find(f => f.locations.includes(locationId));
+    if (foundFloor) {
+      handleSelectFloor(foundFloor.id);
+    }
     setSelectedLocation(locationId);
-    setCurrentScreen('apartment');
+  };
+
+  const handleBackFromApartment = () => {
+    setSelectedLocation(null);
   };
 
   const unreadCount = state.notifications.filter(n => !n.read).length;
+
+  if (!isLoaded) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-neutral-100 dark:bg-neutral-950 text-neutral-800 dark:text-neutral-100 font-sans transition-colors duration-200">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="flex items-center justify-center mr-1 shrink-0">
+            <svg width="32" height="32" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M28 12 L12 24 L28 36 L36 36 L20 24 L36 12 Z" fill="#84b0b2" />
+              <path d="M38 12 L22 24 L38 36 L46 36 L30 24 L46 12 Z" fill="#7a7c80" />
+            </svg>
+          </div>
+          <h1 className="text-2xl tracking-tight text-neutral-800 dark:text-neutral-100 leading-none flex items-center gap-1.5 -ml-1">
+            <span className="font-light lowercase">klacon</span>
+            <span className="font-bold text-slate-500 dark:text-slate-400 uppercase text-[10px] tracking-widest mt-1">Fieldtrack</span>
+          </h1>
+        </div>
+        <div className="w-8 h-8 border-3 border-teal-500 border-t-transparent rounded-full animate-spin mb-3" />
+        <p className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">
+          Sincronizando serviços e categorias da obra...
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen bg-neutral-100 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 font-sans transition-colors duration-200">
@@ -255,25 +303,10 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto pb-20">
-        {currentScreen === 'home' && (
-          <HomeScreen 
-            state={state} 
-            onSelectLocation={navigateToApartment} 
-            onOpenSettings={() => setShowSettingsModal(true)} 
-            onOpenMultiFill={() => setShowMultiFillModal(true)}
-          />
-        )}
-        {currentScreen === 'dashboard' && (
-          <DashboardScreen 
-            state={state}
-            onSelectLocation={navigateToApartment}
-            onOpenSettings={() => setShowSettingsModal(true)}
-          />
-        )}
-        {currentScreen === 'apartment' && selectedLocation && (
+        {selectedLocation ? (
           <ApartmentScreen 
             locationId={selectedLocation} 
-            onBack={() => setCurrentScreen('home')}
+            onBack={handleBackFromApartment}
             locationData={state.locations[selectedLocation] || {services: {}}}
             updateService={(svc, updates) => updateService(selectedLocation, svc, updates)}
             batchUpdateServices={(svcs, updates) => batchUpdateLocationServices(selectedLocation, svcs, updates)}
@@ -284,31 +317,53 @@ export default function App() {
             onDeleteCategory={deleteCategory}
             onOpenSettings={() => setShowSettingsModal(true)}
           />
-        )}
-        {currentScreen === 'search' && (
-          <SearchFilterScreen 
-            state={state} 
-            onSelectLocation={navigateToApartment} 
-          />
-        )}
-        {currentScreen === 'notifications' && (
-          <NotificationsScreen 
-            notifications={state.notifications}
-            settings={state.notificationSettings}
-            onMarkRead={markNotificationRead}
-            onMarkAllRead={markAllNotificationsRead}
-            onClearAll={clearAllNotifications}
-            onRemoveNotification={removeNotification}
-            onAddTestNotification={addTestNotification}
-            onUpdateSettings={updateNotificationSettings}
-            onSelectLocation={navigateToApartment}
-          />
-        )}
-        {currentScreen === 'floorplan' && (
-          <FloorPlanScreen 
-            state={state}
-            onSelectLocation={navigateToApartment}
-          />
+        ) : (
+          <>
+            {currentScreen === 'home' && (
+              <HomeScreen 
+                state={state} 
+                onSelectLocation={navigateToApartment} 
+                onOpenSettings={() => setShowSettingsModal(true)} 
+                onOpenMultiFill={() => setShowMultiFillModal(true)}
+                selectedFloor={selectedFloor}
+                onSelectFloor={handleSelectFloor}
+              />
+            )}
+            {currentScreen === 'dashboard' && (
+              <DashboardScreen 
+                state={state}
+                onSelectLocation={navigateToApartment}
+                onOpenSettings={() => setShowSettingsModal(true)}
+              />
+            )}
+            {currentScreen === 'search' && (
+              <SearchFilterScreen 
+                state={state} 
+                onSelectLocation={navigateToApartment} 
+              />
+            )}
+            {currentScreen === 'notifications' && (
+              <NotificationsScreen 
+                notifications={state.notifications}
+                settings={state.notificationSettings}
+                onMarkRead={markNotificationRead}
+                onMarkAllRead={markAllNotificationsRead}
+                onClearAll={clearAllNotifications}
+                onRemoveNotification={removeNotification}
+                onAddTestNotification={addTestNotification}
+                onUpdateSettings={updateNotificationSettings}
+                onSelectLocation={navigateToApartment}
+              />
+            )}
+            {currentScreen === 'floorplan' && (
+              <FloorPlanScreen 
+                state={state}
+                onSelectLocation={navigateToApartment}
+                selectedFloor={selectedFloor}
+                onSelectFloor={handleSelectFloor}
+              />
+            )}
+          </>
         )}
       </main>
 
@@ -364,32 +419,32 @@ export default function App() {
       {/* Bottom Navigation */}
       <nav className="bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 fixed bottom-0 w-full flex justify-around items-center h-16 px-1 sm:px-2 z-10 pb-safe transition-colors duration-200">
         <NavButton 
-          active={(currentScreen === 'home' || currentScreen === 'apartment') && !showSettingsModal} 
+          active={(currentScreen === 'home' || selectedLocation !== null) && !showSettingsModal} 
           onClick={() => { setCurrentScreen('home'); setSelectedLocation(null); setShowSettingsModal(false); }}
           icon={<Home className="w-5 h-5 sm:w-6 sm:h-6" />} 
           label="Início" 
         />
         <NavButton 
-          active={currentScreen === 'dashboard' && !showSettingsModal} 
+          active={currentScreen === 'dashboard' && selectedLocation === null && !showSettingsModal} 
           onClick={() => { setCurrentScreen('dashboard'); setSelectedLocation(null); setShowSettingsModal(false); }}
           icon={<BarChart3 className="w-5 h-5 sm:w-6 sm:h-6" />} 
           label="Dashboard" 
         />
         <NavButton 
-          active={currentScreen === 'floorplan' && !showSettingsModal} 
-          onClick={() => { setCurrentScreen('floorplan'); setShowSettingsModal(false); }}
+          active={currentScreen === 'floorplan' && selectedLocation === null && !showSettingsModal} 
+          onClick={() => { setCurrentScreen('floorplan'); setSelectedLocation(null); setShowSettingsModal(false); }}
           icon={<Map className="w-5 h-5 sm:w-6 sm:h-6" />} 
           label="Planta" 
         />
         <NavButton 
-          active={currentScreen === 'search' && !showSettingsModal} 
-          onClick={() => { setCurrentScreen('search'); setShowSettingsModal(false); }}
+          active={currentScreen === 'search' && selectedLocation === null && !showSettingsModal} 
+          onClick={() => { setCurrentScreen('search'); setSelectedLocation(null); setShowSettingsModal(false); }}
           icon={<Search className="w-5 h-5 sm:w-6 sm:h-6" />} 
           label="Busca" 
         />
         <NavButton 
-          active={currentScreen === 'notifications' && !showSettingsModal} 
-          onClick={() => { setCurrentScreen('notifications'); setShowSettingsModal(false); }}
+          active={currentScreen === 'notifications' && selectedLocation === null && !showSettingsModal} 
+          onClick={() => { setCurrentScreen('notifications'); setSelectedLocation(null); setShowSettingsModal(false); }}
           icon={
             <div className="relative">
               <Bell className="w-5 h-5 sm:w-6 sm:h-6" />

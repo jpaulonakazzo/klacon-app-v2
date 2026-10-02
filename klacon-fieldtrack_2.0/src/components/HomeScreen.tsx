@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { FLOORS, AppState, isCustomService } from '../types';
 import { cn } from '../lib/utils';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -9,14 +9,38 @@ export function HomeScreen({
   state, 
   onSelectLocation,
   onOpenSettings,
-  onOpenMultiFill 
+  onOpenMultiFill,
+  selectedFloor: propSelectedFloor,
+  onSelectFloor
 }: { 
   state: AppState, 
   onSelectLocation: (id: string) => void,
   onOpenSettings?: () => void,
-  onOpenMultiFill?: () => void 
+  onOpenMultiFill?: () => void,
+  selectedFloor?: string,
+  onSelectFloor?: (floorId: string) => void
 }) {
-  const [selectedFloor, setSelectedFloor] = useState<string>(FLOORS[1].id); // Default to 1st floor
+  const [localFloor, setLocalFloor] = useState<string>(FLOORS[1].id);
+  const selectedFloor = propSelectedFloor !== undefined ? propSelectedFloor : localFloor;
+  const floorBarRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll selected floor pill into view
+  useEffect(() => {
+    if (floorBarRef.current) {
+      const activeBtn = floorBarRef.current.querySelector('[data-active="true"]') as HTMLElement;
+      if (activeBtn) {
+        activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      }
+    }
+  }, [selectedFloor]);
+
+  const handleFloorChange = (floorId: string) => {
+    if (onSelectFloor) {
+      onSelectFloor(floorId);
+    } else {
+      setLocalFloor(floorId);
+    }
+  };
 
   const customServicesCount = useMemo(() => {
     return state.servicesList.filter(s => isCustomService(s)).length;
@@ -188,11 +212,12 @@ export function HomeScreen({
       </div>
 
       {/* Floor Selector (Horizontal Scroll) */}
-      <div className="flex overflow-x-auto pb-2 -mx-4 px-4 snap-x hide-scrollbar gap-2">
+      <div ref={floorBarRef} className="flex overflow-x-auto pb-2 -mx-4 px-4 snap-x hide-scrollbar gap-2">
         {FLOORS.map(floor => (
           <button
             key={floor.id}
-            onClick={() => setSelectedFloor(floor.id)}
+            data-active={selectedFloor === floor.id}
+            onClick={() => handleFloorChange(floor.id)}
             className={cn(
               "snap-start shrink-0 px-5 py-2.5 rounded-full font-medium text-sm transition-all whitespace-nowrap",
               selectedFloor === floor.id 

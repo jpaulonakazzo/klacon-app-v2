@@ -6,44 +6,36 @@ import {
   ServiceState, 
   ALL_LOCATIONS, 
   SERVICES_LIST, 
-  GRANITOS_SUBSERVICES,
-  REVESTIMENTO_CERAMICO_SUBSERVICES,
   DEFAULT_CATEGORIES,
-  ServiceCategory,
+  ServiceCategory, 
   Status 
 } from './types';
 import { db } from './firebase';
-import { doc, collection, onSnapshot, setDoc, writeBatch, deleteField } from 'firebase/firestore';
+import { doc, collection, onSnapshot, setDoc, getDoc, writeBatch, deleteField } from 'firebase/firestore';
 
 const SETTINGS_STORAGE_KEY = 'klacon_notification_settings';
 const NOTIFICATIONS_STORAGE_KEY = 'klacon_notifications';
 
-function normalizeServicesList(rawList?: string[]): string[] {
-  if (rawList && rawList.length > 0) {
-    let base = [...rawList];
-    const granitosIdx = base.findIndex(s => s === 'Granitos' || s === '🪨 Granitos');
-    if (granitosIdx !== -1) {
-      base.splice(granitosIdx, 1, ...GRANITOS_SUBSERVICES);
+// Clean any conflicting legacy local storage caches that might hold stale services/categories
+function clearLegacyCaches() {
+  if (typeof window === 'undefined') return;
+  const legacyKeys = [
+    'klacon_services',
+    'klacon_categories',
+    'klacon_services_list',
+    'klacon_services_structure',
+    'klacon_settings_services',
+    'klacon_services_cache',
+    'klacon_services_state'
+  ];
+  legacyKeys.forEach(k => {
+    try {
+      localStorage.removeItem(k);
+      sessionStorage.removeItem(k);
+    } catch {
+      // ignore
     }
-    const revestimentoIdx = base.findIndex(s => 
-      s.toLowerCase() === 'revestimento cerâmico' || 
-      s.toLowerCase() === 'revestimento ceramico' ||
-      s.toLowerCase() === '🧱 revestimento cerâmico'
-    );
-    if (revestimentoIdx !== -1) {
-      base.splice(revestimentoIdx, 1, ...REVESTIMENTO_CERAMICO_SUBSERVICES);
-    }
-
-    // Ensure all Revestimento subservices are included in servicesList
-    REVESTIMENTO_CERAMICO_SUBSERVICES.forEach(sub => {
-      if (!base.includes(sub)) {
-        base.push(sub);
-      }
-    });
-
-    return Array.from(new Set(base));
-  }
-  return [...SERVICES_LIST];
+  });
 }
 
 function getInitialNotificationSettings(): NotificationSettings {
@@ -91,79 +83,112 @@ function getInitialNotifications(): AppNotification[] {
 }
 
 export function useAppStore() {
-  const [state, setState] = useState<AppState>(() => ({
-    locations: {},
-    notifications: getInitialNotifications(),
-    notificationSettings: getInitialNotificationSettings(),
-    servicesList: [...SERVICES_LIST],
-    contractors: ['Klacon'],
-    categories: [...DEFAULT_CATEGORIES]
-  }));
+  const [state, setState] = useState<AppState>(() => {
+    clearLegacyCaches();
+    return {
+      locations: {},
+      notifications: getInitialNotifications(),
+      notificationSettings: getInitialNotificationSettings(),
+      servicesList: [], // Initially empty: loads exclusively from Firebase cloud document
+      contractors: ['Klacon'],
+      categories: [] // Initially empty: loads exclusively from Firebase cloud document
+    };
+  });
   const [isLoaded, setIsLoaded] = useState(false);
 
+  // Helper to persist structure to central Firebase document (settings/services_structure)
+  // and mirror to config/appState for maximum backward compatibility
+  const syncCentralStructure = async (updates: {
+    servicesList?: string[];
+    categories?: ServiceCategory[];
+    contractors?: string[];
+  }) => {
+    try {
+      const structureRef = doc(db, 'settings', 'services_structure');
+      const legacyConfigRef = doc(db, 'config', 'appState');
+      const payload = {
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+      await Promise.all([
+        setDoc(structureRef, payload, { merge: true }),
+        setDoc(legacyConfigRef, payload, { merge: true })
+      ]);
+    } catch (err) {
+      console.error("Error syncing central structure to Firebase:", err);
+      throw err;
+    }
+  };
+
   useEffect(() => {
-    // 1. Subscribe to Global Configuration (Services list, Categories and Contractors)
-    const configRef = doc(db, 'config', 'appState');
-    const unsubscribeConfig = onSnapshot(configRef, (docSnap) => {
+    clearLegacyCaches();
+
+    // 1. Subscribe to Central Services & Categories Structure in Firebase (Single Source of Truth)
+    const structureRef = doc(db, 'settings', 'services_structure');
+    const legacyConfigRef = doc(db, 'config', 'appState');
+
+    let isInitializing = false;
+
+    const unsubscribeStructure = onSnapshot(structureRef, async (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        const normalized = normalizeServicesList(data.servicesList);
-        let categories: ServiceCategory[] = Array.isArray(data.categories) && data.categories.length > 0
-          ? [...data.categories]
-          : [...DEFAULT_CATEGORIES];
         
-        // Ensure Revestimento Cerâmico category is present with all 10 subservices
-        const hasRevestimento = categories.some(c => 
-          c.id === 'revestimento_ceramico' || 
-          c.name.toLowerCase() === 'revestimento cerâmico' ||
-          c.name.toLowerCase() === 'revestimento ceramico'
-        );
+        // Exact lists directly from Firebase cloud document - NO hardcoded defaults merged!
+        const rawServicesList: string[] = Array.isArray(data.servicesList) ? data.servicesList : [];
+        const rawCategories: ServiceCategory[] = Array.isArray(data.categories) ? data.categories : [];
+        const rawContractors: string[] = Array.isArray(data.contractors) && data.contractors.length > 0
+          ? data.contractors
+          : ['Klacon'];
 
-        if (!hasRevestimento) {
-          categories.push({
-            id: 'revestimento_ceramico',
-            name: 'Revestimento Cerâmico',
-            subServices: [...REVESTIMENTO_CERAMICO_SUBSERVICES]
-          });
-        } else {
-          categories = categories.map(c => {
-            if (c.id === 'revestimento_ceramico' || c.name.toLowerCase() === 'revestimento cerâmico' || c.name.toLowerCase() === 'revestimento ceramico') {
-              const currentSubs = c.subServices || [];
-              const merged = Array.from(new Set([...currentSubs, ...REVESTIMENTO_CERAMICO_SUBSERVICES]));
-              return {
-                ...c,
-                id: 'revestimento_ceramico',
-                name: 'Revestimento Cerâmico',
-                subServices: merged
-              };
-            }
-            return c;
-          });
-        }
-        
         setState(prev => ({
           ...prev,
-          servicesList: normalized,
-          categories,
-          contractors: data.contractors || ['Klacon']
+          servicesList: rawServicesList,
+          categories: rawCategories,
+          contractors: rawContractors
         }));
-
-        // If categories or normalized list not yet saved in config, update it
-        if (!data.categories || !data.servicesList || JSON.stringify(data.categories) !== JSON.stringify(categories) || JSON.stringify(data.servicesList) !== JSON.stringify(normalized)) {
-          setDoc(configRef, {
-            servicesList: normalized,
-            categories
-          }, { merge: true }).catch(err => console.error("Error updating config with normalized services/categories:", err));
-        }
+        setIsLoaded(true);
       } else {
-        // Initialize config document on first use
-        const normalized = normalizeServicesList([...SERVICES_LIST]);
-        setDoc(configRef, {
-          servicesList: normalized,
-          categories: [...DEFAULT_CATEGORIES],
-          contractors: ['Klacon']
-        });
+        // Document does not exist yet. Only initialize once if cloud has no record.
+        if (isInitializing) return;
+        isInitializing = true;
+
+        try {
+          // Check if legacy config/appState exists before falling back to initial code defaults
+          const legacySnap = await getDoc(legacyConfigRef);
+          if (legacySnap.exists()) {
+            const legData = legacySnap.data();
+            const list = Array.isArray(legData.servicesList) ? legData.servicesList : [...SERVICES_LIST];
+            const cats = Array.isArray(legData.categories) ? legData.categories : [...DEFAULT_CATEGORIES];
+            const contr = Array.isArray(legData.contractors) && legData.contractors.length > 0 ? legData.contractors : ['Klacon'];
+
+            await setDoc(structureRef, {
+              servicesList: list,
+              categories: cats,
+              contractors: contr,
+              migratedFrom: 'config/appState',
+              updatedAt: new Date().toISOString(),
+              version: 1
+            });
+          } else {
+            // Brand new cloud database - Seed initial list once
+            await setDoc(structureRef, {
+              servicesList: [...SERVICES_LIST],
+              categories: [...DEFAULT_CATEGORIES],
+              contractors: ['Klacon'],
+              initializedAt: new Date().toISOString(),
+              version: 1
+            });
+          }
+        } catch (err) {
+          console.error("Error initializing settings/services_structure:", err);
+          setIsLoaded(true);
+        } finally {
+          isInitializing = false;
+        }
       }
+    }, (error) => {
+      console.error("Error listening to settings/services_structure:", error);
+      setIsLoaded(true);
     });
 
     // 2. Subscribe to Locations
@@ -190,29 +215,10 @@ export function useAppStore() {
     });
 
     return () => {
-      unsubscribeConfig();
+      unsubscribeStructure();
       unsubscribeLocations();
     };
   }, []);
-
-  // Initialize empty locations directly in Firestore if they are missing
-  useEffect(() => {
-    if (isLoaded) {
-      const initializeLocations = async () => {
-        const batch = writeBatch(db);
-        let hasChanges = false;
-        
-        ALL_LOCATIONS.forEach(locId => {
-          if (Object.keys(state.locations[locId]?.services || {}).length === 0) {
-            // We just ensure the document is created.
-            // But we don't necessarily need to blast the DB if it's empty.
-            // It will be created when a service is updated.
-          }
-        });
-      };
-      initializeLocations();
-    }
-  }, [isLoaded]);
 
   const updateService = async (locationId: string, serviceName: string, updates: Partial<ServiceState>) => {
     const loc = state.locations[locationId] || { services: {} };
@@ -389,19 +395,25 @@ export function useAppStore() {
   };
 
   const addGlobalService = async (serviceName: string, initialStatus: Status) => {
-    if (state.servicesList.includes(serviceName)) return;
+    const trimmed = serviceName.trim();
+    if (!trimmed || state.servicesList.includes(trimmed)) return;
 
     try {
-      const newServicesList = [...state.servicesList, serviceName];
-      const configRef = doc(db, 'config', 'appState');
-      await setDoc(configRef, { servicesList: newServicesList }, { merge: true });
+      const newServicesList = [...state.servicesList, trimmed];
+      
+      setState(prev => ({
+        ...prev,
+        servicesList: newServicesList
+      }));
+
+      await syncCentralStructure({ servicesList: newServicesList });
 
       const batch = writeBatch(db);
       Object.keys(state.locations).forEach(locId => {
         const locRef = doc(db, 'locations', locId);
         batch.set(locRef, {
           services: {
-            [serviceName]: {
+            [trimmed]: {
               status: initialStatus,
               contractor: '',
               notes: '',
@@ -418,9 +430,20 @@ export function useAppStore() {
   };
 
   const deleteGlobalService = async (serviceName: string) => {
-    // 1. Optimistic state update
+    clearLegacyCaches();
+
+    // 1. Remove from servicesList
     const newServicesList = state.servicesList.filter(s => s !== serviceName);
 
+    // 2. Also remove from any category subservices if present
+    const updatedCategories = state.categories
+      .filter(c => c.name !== serviceName)
+      .map(c => ({
+        ...c,
+        subServices: c.subServices.filter(s => s !== serviceName)
+      }));
+
+    // 3. Optimistic state update
     setState(prev => {
       const updatedLocations = { ...prev.locations };
       Object.keys(updatedLocations).forEach(locId => {
@@ -454,18 +477,20 @@ export function useAppStore() {
       return {
         ...prev,
         servicesList: newServicesList,
+        categories: updatedCategories,
         locations: updatedLocations,
         notifications: newNotifications
       };
     });
 
-    // 2. Persist removal to Firestore
+    // 4. Persist immediately to Firebase central documents
     try {
-      // Update global configuration services list
-      const configRef = doc(db, 'config', 'appState');
-      await setDoc(configRef, { servicesList: newServicesList }, { merge: true });
+      await syncCentralStructure({
+        servicesList: newServicesList,
+        categories: updatedCategories
+      });
 
-      // Clean up service entry across all location documents
+      // 5. Clean up service entry across all location documents
       const locationIds = Object.keys(state.locations);
       const CHUNK_SIZE = 400;
 
@@ -548,11 +573,10 @@ export function useAppStore() {
     });
 
     try {
-      const configRef = doc(db, 'config', 'appState');
-      await setDoc(configRef, {
+      await syncCentralStructure({
         categories: newCategories,
         servicesList: newServicesList
-      }, { merge: true });
+      });
 
       if (newSubItems.length > 0) {
         const batch = writeBatch(db);
@@ -623,11 +647,10 @@ export function useAppStore() {
     });
 
     try {
-      const configRef = doc(db, 'config', 'appState');
-      await setDoc(configRef, {
+      await syncCentralStructure({
         categories: updatedCategories,
         servicesList: newServicesList
-      }, { merge: true });
+      });
 
       if (isNewGlobal) {
         const batch = writeBatch(db);
@@ -652,6 +675,8 @@ export function useAppStore() {
   };
 
   const deleteSubServiceFromCategory = async (categoryId: string, subServiceName: string) => {
+    clearLegacyCaches();
+
     const cat = state.categories.find(c => c.id === categoryId);
     if (!cat) return;
 
@@ -710,11 +735,10 @@ export function useAppStore() {
     });
 
     try {
-      const configRef = doc(db, 'config', 'appState');
-      await setDoc(configRef, {
+      await syncCentralStructure({
         categories: updatedCategories,
         servicesList: newServicesList
-      }, { merge: true });
+      });
 
       if (!otherUses) {
         const locationIds = Object.keys(state.locations);
@@ -747,6 +771,8 @@ export function useAppStore() {
   };
 
   const deleteCategory = async (categoryId: string) => {
+    clearLegacyCaches();
+
     const cat = state.categories.find(c => c.id === categoryId);
     if (!cat) return;
 
@@ -783,7 +809,7 @@ export function useAppStore() {
       const newNotifications: AppNotification[] = [
         {
           id: Math.random().toString(36).substr(2, 9),
-          message: `Categoria "${cat.name}" e seus ${uniqueSubsToDelete.length} subitens foram excluídos.`,
+          message: `Categoria "${cat.name}" e seus ${uniqueSubsToDelete.length} subitens foram excluídos permanentemente.`,
           timestamp: new Date().toISOString(),
           read: false,
           type: 'update'
@@ -806,11 +832,10 @@ export function useAppStore() {
     });
 
     try {
-      const configRef = doc(db, 'config', 'appState');
-      await setDoc(configRef, {
+      await syncCentralStructure({
         categories: updatedCategories,
         servicesList: newServicesList
-      }, { merge: true });
+      });
 
       // Clean up Firestore location entries
       if (uniqueSubsToDelete.length > 0) {
@@ -918,11 +943,10 @@ export function useAppStore() {
     });
 
     try {
-      const configRef = doc(db, 'config', 'appState');
-      await setDoc(configRef, {
+      await syncCentralStructure({
         categories: updatedCategories,
         servicesList: newServicesList
-      }, { merge: true });
+      });
 
       const locationIds = Object.keys(state.locations);
       const CHUNK_SIZE = 400;
@@ -968,7 +992,6 @@ export function useAppStore() {
     ));
     if (cleanedSubServices.length === 0) return;
 
-    // Check if category with this name already exists
     const existingCat = state.categories.find(c => c.name.toLowerCase() === trimmedName.toLowerCase());
     const id = existingCat 
       ? existingCat.id 
@@ -996,7 +1019,6 @@ export function useAppStore() {
       ];
     }
 
-    // Replace the standalone serviceName in servicesList with the new subservices
     let newServicesList = state.servicesList.filter(s => s !== trimmedName);
     cleanedSubServices.forEach(sub => {
       if (!newServicesList.includes(sub)) {
@@ -1025,7 +1047,6 @@ export function useAppStore() {
           }
         });
 
-        // Remove the simple service from locations since it's now an accordion category
         delete updatedServices[trimmedName];
 
         updatedLocations[locId] = {
@@ -1060,11 +1081,10 @@ export function useAppStore() {
     });
 
     try {
-      const configRef = doc(db, 'config', 'appState');
-      await setDoc(configRef, {
+      await syncCentralStructure({
         categories: updatedCategories,
         servicesList: newServicesList
-      }, { merge: true });
+      });
 
       const locationIds = Object.keys(state.locations);
       const CHUNK_SIZE = 400;
@@ -1121,8 +1141,7 @@ export function useAppStore() {
     }));
 
     try {
-      const configRef = doc(db, 'config', 'appState');
-      await setDoc(configRef, { categories: updatedCategories }, { merge: true });
+      await syncCentralStructure({ categories: updatedCategories });
     } catch (error) {
       console.error("Error editing category name:", error);
     }
@@ -1164,10 +1183,8 @@ export function useAppStore() {
       });
 
       if (contractorName && !state.contractors.includes(contractorName)) {
-        const configRef = doc(db, 'config', 'appState');
-        await setDoc(configRef, {
-          contractors: [...state.contractors, contractorName].sort()
-        }, { merge: true });
+        const newContractors = [...state.contractors, contractorName].sort();
+        await syncCentralStructure({ contractors: newContractors });
       }
 
       await batch.commit();
@@ -1286,12 +1303,9 @@ export function useAppStore() {
 
     // 2. Persist to Firestore using chunked batch writes
     try {
-      // If a new contractor was provided, persist to global contractors list
       if (contractor && contractor !== 'keep' && contractor !== 'KEEP' && !state.contractors.includes(contractor)) {
-        const configRef = doc(db, 'config', 'appState');
-        await setDoc(configRef, {
-          contractors: [...state.contractors, contractor].sort()
-        }, { merge: true });
+        const newContractors = [...state.contractors, contractor].sort();
+        await syncCentralStructure({ contractors: newContractors });
       }
 
       const CHUNK_SIZE = 400;
@@ -1327,10 +1341,8 @@ export function useAppStore() {
   const addContractor = async (contractorName: string) => {
     if (!contractorName.trim() || state.contractors.includes(contractorName.trim())) return;
     try {
-      const configRef = doc(db, 'config', 'appState');
-      await setDoc(configRef, {
-        contractors: [...state.contractors, contractorName.trim()].sort()
-      }, { merge: true });
+      const newContractors = [...state.contractors, contractorName.trim()].sort();
+      await syncCentralStructure({ contractors: newContractors });
     } catch (error) {
       console.error("Error adding contractor", error);
     }
@@ -1359,6 +1371,7 @@ export function useAppStore() {
 
   return {
     state,
+    isLoaded,
     updateService,
     markNotificationRead,
     markAllNotificationsRead,

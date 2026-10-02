@@ -4,9 +4,29 @@ import { cn } from '../lib/utils';
 import { Layers, ChevronDown, Check, Building2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-export function FloorPlanScreen({ state, onSelectLocation }: { state: AppState, onSelectLocation: (id: string) => void }) {
-  const [selectedFloor, setSelectedFloor] = useState<string>(FLOORS[1].id);
+export function FloorPlanScreen({ 
+  state, 
+  onSelectLocation,
+  selectedFloor: propSelectedFloor,
+  onSelectFloor
+}: { 
+  state: AppState, 
+  onSelectLocation: (id: string) => void,
+  selectedFloor?: string,
+  onSelectFloor?: (floorId: string) => void
+}) {
+  const [localFloor, setLocalFloor] = useState<string>(FLOORS[1].id);
+  const selectedFloor = propSelectedFloor !== undefined ? propSelectedFloor : localFloor;
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+  const handleFloorChange = (floorId: string) => {
+    if (onSelectFloor) {
+      onSelectFloor(floorId);
+    } else {
+      setLocalFloor(floorId);
+    }
+    setIsDropdownOpen(false);
+  };
 
   const floorData = FLOORS.find(f => f.id === selectedFloor);
   
@@ -45,8 +65,8 @@ export function FloorPlanScreen({ state, onSelectLocation }: { state: AppState, 
   const selectedFloorCompletion = floorData ? Math.round(getFloorCompletion(floorData) * 100) : 0;
 
   return (
-    <div className="flex flex-col h-full bg-neutral-50 dark:bg-neutral-950">
-      <div className="p-4 bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 flex flex-col gap-3 sticky top-0 z-10 shadow-sm transition-colors">
+    <div className="flex flex-col min-h-full bg-neutral-50 dark:bg-neutral-950 relative">
+      <div className="p-4 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border-b border-neutral-200/80 dark:border-neutral-800 flex flex-col gap-3 sticky top-0 z-30 shadow-sm transition-colors">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Layers className="w-5 h-5 text-teal-700 dark:text-teal-400" />
@@ -99,10 +119,7 @@ export function FloorPlanScreen({ state, onSelectLocation }: { state: AppState, 
                       <button
                         key={f.id}
                         type="button"
-                        onClick={() => {
-                          setSelectedFloor(f.id);
-                          setIsDropdownOpen(false);
-                        }}
+                        onClick={() => handleFloorChange(f.id)}
                         className={cn(
                           "flex items-center justify-between px-3 py-2.5 rounded-lg text-left text-sm font-medium transition-all",
                           isSelected 
@@ -136,10 +153,7 @@ export function FloorPlanScreen({ state, onSelectLocation }: { state: AppState, 
             return (
               <button
                 key={f.id}
-                onClick={() => {
-                  setSelectedFloor(f.id);
-                  setIsDropdownOpen(false);
-                }}
+                onClick={() => handleFloorChange(f.id)}
                 className={cn(
                   "shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-all whitespace-nowrap",
                   isSelected 

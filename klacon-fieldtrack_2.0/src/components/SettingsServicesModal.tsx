@@ -723,8 +723,8 @@ export function SettingsServicesModal({
                                     </div>
                                   ) : (
                                     <>
-                                      <div className="flex flex-col min-w-0 flex-1">
-                                        <span className="text-xs font-medium text-neutral-900 dark:text-neutral-100 truncate">
+                                      <div className="flex flex-col min-w-0 flex-1 pr-2">
+                                        <span className="text-xs font-medium text-neutral-900 dark:text-neutral-100 whitespace-normal break-words leading-snug">
                                           {subName}
                                         </span>
                                         <span className="text-[10px] text-neutral-400 dark:text-neutral-500">

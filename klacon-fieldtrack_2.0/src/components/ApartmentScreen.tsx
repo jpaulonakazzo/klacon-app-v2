@@ -27,8 +27,8 @@ import {
   GRANITOS_CATEGORY_NAME,
   GroupedServiceItem,
   ServiceCategory,
-  DEFAULT_CATEGORIES,
-  isCustomService
+  isCustomService,
+  FLOORS
 } from '../types';
 import { cn } from '../lib/utils';
 import { DeleteServiceConfirmModal } from './DeleteServiceConfirmModal';
@@ -54,7 +54,7 @@ export function ApartmentScreen({
   updateService, 
   servicesList, 
   contractorsList,
-  categories = DEFAULT_CATEGORIES,
+  categories = [],
   batchUpdateServices,
   onDeleteService,
   onDeleteCategory,
@@ -175,37 +175,56 @@ export function ApartmentScreen({
     }
   };
 
+  // Identify corresponding floor/pavimento for this location
+  const currentFloor = useMemo(() => {
+    return FLOORS.find(f => f.locations.includes(locationId));
+  }, [locationId]);
+
+  const isNumericLocation = /^\d+$/.test(locationId.trim());
+  const locationTitle = isNumericLocation ? `Apartamento ${locationId}` : `Local: ${locationId}`;
+
   return (
-    <div className="flex flex-col h-full bg-neutral-50 dark:bg-neutral-950">
-      {/* Sticky Sub-header */}
-      <div className="bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 sticky top-0 z-10 flex flex-col shadow-xs transition-colors">
-        <div className="px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+    <div className="flex flex-col min-h-full bg-neutral-50 dark:bg-neutral-950 relative">
+      {/* Sticky Navigation Bar (Fixo no topo com acabamento translúcido e desfoque) */}
+      <div className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm shadow-sm border-b border-neutral-200/80 dark:border-neutral-800 transition-colors">
+        <div className="px-3.5 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between gap-2">
+          {/* Seta de Voltar + Identificação do Apartamento / Pavimento */}
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <button 
+              type="button"
               onClick={onBack} 
-              className="p-1 -ml-1 text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white transition-colors"
-              title="Voltar"
+              className="w-10 h-10 rounded-xl bg-neutral-100/90 dark:bg-neutral-800/90 hover:bg-neutral-200 dark:hover:bg-neutral-700 active:scale-95 text-neutral-700 dark:text-neutral-200 flex items-center justify-center shrink-0 border border-neutral-200/80 dark:border-neutral-700 transition-all shadow-2xs"
+              title="Voltar para a página anterior"
+              aria-label="Voltar para a página anterior"
             >
-              <ArrowLeft className="w-6 h-6" />
+              <ArrowLeft className="w-5 h-5 text-neutral-800 dark:text-neutral-100" />
             </button>
-            <div>
-              <h2 className="text-lg font-bold text-neutral-900 dark:text-neutral-100 leading-tight">
-                Local: {locationId}
-              </h2>
-              <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                Vistoria técnica detalhada
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <h2 className="text-base sm:text-lg font-bold text-neutral-900 dark:text-neutral-100 leading-tight truncate">
+                  {locationTitle}
+                </h2>
+                {currentFloor && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-semibold bg-teal-50 dark:bg-teal-950/70 text-teal-700 dark:text-teal-300 border border-teal-200/80 dark:border-teal-800/80 shrink-0">
+                    {currentFloor.name}
+                  </span>
+                )}
+              </div>
+              <span className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate">
+                {currentFloor ? `${currentFloor.name} • Vistoria técnica detalhada` : 'Vistoria técnica detalhada'}
               </span>
             </div>
           </div>
 
-          {/* Actions: Settings and Edit Mode Toggle */}
-          <div className="flex items-center gap-2">
+          {/* Botões de Ação: Configurações e Modo de Edição */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {onOpenSettings && (
               <button
                 type="button"
                 onClick={onOpenSettings}
-                className="p-2 text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-white rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                className="p-2 text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-white rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
                 title="Configurações de Serviços"
+                aria-label="Configurações de Serviços"
               >
                 <SlidersHorizontal className="w-4 h-4" />
               </button>
@@ -214,7 +233,7 @@ export function ApartmentScreen({
               type="button"
               onClick={() => setIsEditMode(prev => !prev)}
               className={cn(
-                "px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors border",
+                "px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors border",
                 isEditMode
                   ? "bg-red-50 text-red-700 border-red-300 dark:bg-red-950/70 dark:text-red-300 dark:border-red-800 shadow-xs"
                   : "bg-neutral-100 text-neutral-700 border-neutral-200 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:border-neutral-700 dark:hover:bg-neutral-700"
@@ -224,54 +243,57 @@ export function ApartmentScreen({
               {isEditMode ? (
                 <>
                   <X className="w-3.5 h-3.5" />
-                  <span>Sair da Edição</span>
+                  <span className="hidden sm:inline">Sair da Edição</span>
+                  <span className="sm:hidden">Sair</span>
                 </>
               ) : (
                 <>
                   <Trash2 className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
-                  <span>Modo de Edição</span>
+                  <span className="hidden sm:inline">Modo de Edição</span>
+                  <span className="sm:hidden">Editar</span>
                 </>
               )}
             </button>
           </div>
         </div>
+      </div>
 
-        {/* Edit Mode Alert Banner */}
-        {isEditMode && (
-          <div className="mx-4 mb-2 p-2.5 rounded-xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900/60 text-xs text-red-800 dark:text-red-300 flex items-center justify-between gap-2 shadow-xs">
-            <div className="flex items-center gap-2 min-w-0">
-              <Trash2 className="w-4 h-4 shrink-0 text-red-600 dark:text-red-400" />
-              <span className="text-[11px] sm:text-xs">
-                <strong>Modo de Edição:</strong> Clique na lixeira vermelha para excluir serviços duplicados ou personalizados permanentemente.
-              </span>
-            </div>
-            <button 
-              onClick={() => setIsEditMode(false)}
-              className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-100 dark:bg-red-900/60 hover:bg-red-200 text-red-800 dark:text-red-200 shrink-0"
-            >
-              Concluir
-            </button>
+      {/* Edit Mode Alert Banner */}
+      {isEditMode && (
+        <div className="mx-4 mt-3 p-2.5 rounded-xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900/60 text-xs text-red-800 dark:text-red-300 flex items-center justify-between gap-2 shadow-xs">
+          <div className="flex items-center gap-2 min-w-0">
+            <Trash2 className="w-4 h-4 shrink-0 text-red-600 dark:text-red-400" />
+            <span className="text-[11px] sm:text-xs">
+              <strong>Modo de Edição:</strong> Clique na lixeira vermelha para excluir serviços duplicados ou personalizados permanentemente.
+            </span>
           </div>
-        )}
-        
-        {/* Contractor Filter */}
-        <div className="px-4 pb-3 flex flex-col gap-2">
-          <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
-            <Filter className="w-3 h-3" /> Filtrar por Empreiteira
-          </div>
-          <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-1 -mx-4 px-4 snap-x">
-            <FilterPill active={contractorFilter === 'all'} onClick={() => setContractorFilter('all')}>
-              Mostrar Todos
+          <button 
+            type="button"
+            onClick={() => setIsEditMode(false)}
+            className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-100 dark:bg-red-900/60 hover:bg-red-200 text-red-800 dark:text-red-200 shrink-0"
+          >
+            Concluir
+          </button>
+        </div>
+      )}
+      
+      {/* Contractor Filter */}
+      <div className="bg-white/80 dark:bg-neutral-900/80 border-b border-neutral-200/60 dark:border-neutral-800/60 px-4 py-3 flex flex-col gap-2 transition-colors">
+        <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+          <Filter className="w-3 h-3" /> Filtrar por Empreiteira
+        </div>
+        <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-1 -mx-4 px-4 snap-x">
+          <FilterPill active={contractorFilter === 'all'} onClick={() => setContractorFilter('all')}>
+            Mostrar Todos
+          </FilterPill>
+          {uniqueContractors.map(c => (
+            <FilterPill key={c} active={contractorFilter === c} onClick={() => setContractorFilter(c)}>
+              {c}
             </FilterPill>
-            {uniqueContractors.map(c => (
-              <FilterPill key={c} active={contractorFilter === c} onClick={() => setContractorFilter(c)}>
-                {c}
-              </FilterPill>
-            ))}
-            <FilterPill active={contractorFilter === 'unassigned'} onClick={() => setContractorFilter('unassigned')}>
-              Sem Empreiteira
-            </FilterPill>
-          </div>
+          ))}
+          <FilterPill active={contractorFilter === 'unassigned'} onClick={() => setContractorFilter('unassigned')}>
+            Sem Empreiteira
+          </FilterPill>
         </div>
       </div>
 
@@ -344,14 +366,14 @@ export function ApartmentScreen({
                 {/* Category Accordion Header */}
                 <div 
                   className={cn(
-                    "p-4 flex items-center justify-between cursor-pointer select-none transition-colors",
+                    "p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer select-none transition-colors",
                     isCategoryExpanded 
                       ? "bg-teal-50/40 dark:bg-teal-950/20 border-b border-neutral-200/80 dark:border-neutral-800" 
                       : "hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
                   )}
                   onClick={() => toggleCategory(category.id)}
                 >
-                  <div className="flex items-center gap-3 min-w-0 pr-2">
+                  <div className="flex items-center gap-3 min-w-0 pr-2 flex-1">
                     <div className={cn(
                       "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors border shadow-xs",
                       allCompleted
@@ -363,25 +385,25 @@ export function ApartmentScreen({
                       <Layers className="w-5 h-5" />
                     </div>
 
-                    <div className="flex flex-col min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-bold text-neutral-900 dark:text-neutral-100 text-base leading-tight">
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-bold text-neutral-900 dark:text-neutral-100 text-base leading-tight whitespace-normal break-words">
                           {category.name}
                         </h3>
-                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 border border-neutral-200/60 dark:border-neutral-700">
+                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 border border-neutral-200/60 dark:border-neutral-700 shrink-0">
                           {totalCount} {totalCount === 1 ? 'subitem' : 'subitens'}
                         </span>
                       </div>
-                      <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+                      <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5 whitespace-normal break-words">
                         {completedCount} de {totalCount} concluídos ({percentCompleted}%)
                       </p>
                     </div>
                   </div>
 
                   {/* Right side status badge, delete button in edit mode, and chevron */}
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 pt-1.5 sm:pt-0 border-t sm:border-t-0 border-neutral-100 dark:border-neutral-800/80">
                     <span className={cn(
-                      "text-[11px] font-bold px-2.5 py-1 rounded-lg transition-colors border",
+                      "text-[11px] font-bold px-2.5 py-1 rounded-lg transition-colors border whitespace-nowrap",
                       allCompleted 
                         ? "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/80 dark:text-emerald-300 dark:border-emerald-800/60"
                         : completedCount > 0 || inProgressCount > 0
@@ -405,7 +427,7 @@ export function ApartmentScreen({
                           e.stopPropagation();
                           setCategoryToDelete(category);
                         }}
-                        className="p-1.5 rounded-lg text-red-600 dark:text-red-400 hover:text-white hover:bg-red-600 dark:hover:bg-red-600 border border-red-200 dark:border-red-900/60 transition-colors shadow-xs"
+                        className="p-1.5 rounded-lg text-red-600 dark:text-red-400 hover:text-white hover:bg-red-600 dark:hover:bg-red-600 border border-red-200 dark:border-red-900/60 transition-colors shadow-xs shrink-0"
                         title={`Excluir categoria "${category.name}" e todos os subitens`}
                       >
                         <Trash2 className="w-4 h-4" />
@@ -415,7 +437,7 @@ export function ApartmentScreen({
                     <motion.div
                       animate={{ rotate: isCategoryExpanded ? 180 : 0 }}
                       transition={{ duration: 0.25, ease: "easeInOut" }}
-                      className="text-neutral-400 dark:text-neutral-500"
+                      className="text-neutral-400 dark:text-neutral-500 shrink-0"
                     >
                       <ChevronDown className="w-5 h-5" />
                     </motion.div>
@@ -628,7 +650,7 @@ const ServiceRowCard: React.FC<ServiceRowCardProps> = ({
     >
       <div 
         className={cn(
-          "p-3.5 flex items-center justify-between cursor-pointer transition-colors",
+          "p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 cursor-pointer transition-colors",
           isExpanded 
             ? "bg-neutral-50/80 dark:bg-neutral-700/50" 
             : isSubItem
@@ -637,10 +659,10 @@ const ServiceRowCard: React.FC<ServiceRowCardProps> = ({
         )}
         onClick={onToggleExpand}
       >
-        <div className="flex flex-col flex-1 pr-3 min-w-0">
+        <div className="flex flex-col flex-1 pr-2 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className={cn(
-              "font-medium leading-tight truncate",
+              "font-medium leading-snug whitespace-normal break-words",
               isSubItem 
                 ? "text-sm text-neutral-800 dark:text-neutral-200" 
                 : "text-sm text-neutral-900 dark:text-neutral-100 font-semibold"
@@ -670,16 +692,16 @@ const ServiceRowCard: React.FC<ServiceRowCardProps> = ({
           </div>
 
           {hasContractor && (
-            <span className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate mt-0.5">
+            <span className="text-[11px] text-neutral-500 dark:text-neutral-400 whitespace-normal break-words mt-0.5">
               Emp: <strong className="text-neutral-700 dark:text-neutral-200 font-semibold">{svcData.contractor}</strong>
             </span>
           )}
         </div>
 
         {/* Action Controls: Status Buttons & Red Trash in Edit Mode */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 pt-1.5 sm:pt-0 border-t sm:border-t-0 border-neutral-100 dark:border-neutral-800/80">
           {/* Individual Status Buttons */}
-          <div className="flex gap-1">
+          <div className="flex gap-1 flex-1 sm:flex-initial justify-end">
             <StatusButton 
               active={svcData.status === 'pending' || !svcData.status} 
               color="bg-neutral-200 text-neutral-800 dark:bg-neutral-600 dark:text-white font-bold" 
